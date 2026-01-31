@@ -21,12 +21,14 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Dependencies
+      - name: Install Project Dependencies
+        run: npm ci
+
+      - name: Install Infra Dependencies
         working-directory: infra
         run: |
           npm ci
           npm install -g aws-cdk
-          npm install
 
       - name: Run Tests
         # Run tests from the project root (where the test script is)
