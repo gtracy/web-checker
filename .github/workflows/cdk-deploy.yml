@@ -70,8 +70,6 @@ jobs:
       - name: CDK Deploy (Bootstrap/Update)
         if: env.perform_full_deploy == 'true'
         working-directory: infra
-        env:
-          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
         run: |
           echo "Deploying stack for the first time..."
           npx cdk deploy --require-approval never --outputs-file outputs.json

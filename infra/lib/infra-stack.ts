@@ -5,7 +5,7 @@ import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as sns from 'aws-cdk-lib/aws-sns';
-import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
+// import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as path from 'path';
 import { Construct } from 'constructs';
 
@@ -25,12 +25,11 @@ export class PatagoniaScraperStack extends cdk.Stack {
       displayName: 'Patagonia Worn Wear Alerts'
     });
 
-    // 5. Email Subscription
-    const emailAddress = process.env.ALERT_EMAIL;
-    if (!emailAddress) {
-      throw new Error('ALERT_EMAIL environment variable is required');
-    }
-    topic.addSubscription(new subs.EmailSubscription(emailAddress));
+    // 5. CfnOutput for Topic ARN (Managed manually)
+    new cdk.CfnOutput(this, 'TopicArn', {
+      value: topic.topicArn,
+      description: 'The ARN of the SNS Topic for alerts',
+    });
 
     // 2. Lambda Function
     const scraperLambda = new nodejs.NodejsFunction(this, 'ScraperFunction', {
