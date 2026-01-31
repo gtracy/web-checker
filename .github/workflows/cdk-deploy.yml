@@ -1,4 +1,4 @@
-name: Deploy Function Code
+name: Smart Deploy
 
 on:
   push:
@@ -6,8 +6,8 @@ on:
       - '*'
 
 permissions:
-  id-token: write # Required for requesting the JWT
-  contents: read  # Required for actions/checkout
+  id-token: write
+  contents: read
 
 jobs:
   deploy:
@@ -23,15 +23,15 @@ jobs:
 
       - name: Install Dependencies
         run: |
+          echo "Installing Root Dependencies..."
           npm ci
-          # Install esbuild for the build script
+          # Ensure esbuild is installed for bundling
           npm install esbuild
-
-      - name: Build & Package
-        run: |
-          npm run build
-          cd dist
-          zip -r ../function.zip .
+          
+          echo "Installing Infra Dependencies..."
+          cd infra
+          npm ci
+          npm install -g aws-cdk
           cd ..
 
       - name: Configure AWS Credentials
@@ -41,41 +41,67 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: Get Function Name
-        id: get-name
+      - name: Check Stack Existence
+        id: check-stack
         run: |
-          # Retrieve the function name from the CloudFormation stack outputs
+          if aws cloudformation describe-stacks --stack-name PatagoniaScraperStack > /dev/null 2>&1; then
+            echo "Stack exists."
+            echo "stack_exists=true" >> $GITHUB_ENV
+          else
+            echo "Stack does not exist."
+            echo "stack_exists=false" >> $GITHUB_ENV
+          fi
+
+      # PATH A: Full Deploy (If stack missing)
+      - name: CDK Deploy (Bootstrap)
+        if: env.stack_exists == 'false'
+        working-directory: infra
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: |
+          echo "Deploying stack for the first time..."
+          npx cdk deploy --require-approval never --outputs-file outputs.json
+          
+          # Extract Function Name
+          FUNCTION_NAME=$(jq -r '.PatagoniaScraperStack.ScraperFunctionName' outputs.json)
+          echo "FUNCTION_NAME=$FUNCTION_NAME" >> $GITHUB_ENV
+
+      # PATH B: Direct Update (If stack exists)
+      - name: Direct Lambda Update
+        if: env.stack_exists == 'true'
+        run: |
+          echo "Stack exists. Performing fast update..."
+          
+          # 1. Build
+          npm run build
+          cd dist && zip -r ../function.zip . && cd ..
+          
+          # 2. Get Function Name
           FUNCTION_NAME=$(aws cloudformation describe-stacks \
             --stack-name PatagoniaScraperStack \
             --query "Stacks[0].Outputs[?OutputKey=='ScraperFunctionName'].OutputValue" \
             --output text)
             
-          if [ -z "$FUNCTION_NAME" ] || [ "$FUNCTION_NAME" == "None" ]; then
-            echo "Error: Could not retrieve Function Name from stack outputs."
-            exit 1
-          fi
           echo "FUNCTION_NAME=$FUNCTION_NAME" >> $GITHUB_ENV
-          echo "Found Function: $FUNCTION_NAME"
-
-      - name: Update Lambda Code
-        run: |
+          
+          # 3. Update Code
           aws lambda update-function-code \
             --function-name $FUNCTION_NAME \
             --zip-file fileb://function.zip
-
-          # Wait for update to complete
+            
+          # 4. Wait
           aws lambda wait function-updated --function-name $FUNCTION_NAME
 
-      - name: Publish Lambda Version
+      - name: Publish Version & Alias
         run: |
+          echo "Processing Function: $FUNCTION_NAME"
+          
           # Publish new version
-          echo "Publishing new version..."
           VERSION=$(aws lambda publish-version --function-name "$FUNCTION_NAME" --query 'Version' --output text)
           echo "Published Version: $VERSION"
           
-          # Update/Create 'prod' alias
-          echo "Updating 'prod' alias to version $VERSION..."
+          # Update 'prod' alias
           aws lambda update-alias --function-name "$FUNCTION_NAME" --name prod --function-version "$VERSION" || \
           aws lambda create-alias --function-name "$FUNCTION_NAME" --name prod --function-version "$VERSION"
-
-          echo "Successfully updated alias 'prod' to version $VERSION"
+          
+          echo "Success! Alias 'prod' -> $VERSION"
