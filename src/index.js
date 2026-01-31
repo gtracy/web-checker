@@ -15,7 +15,7 @@ const sns = new SNSClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const BUCKET_NAME = process.env.STATE_BUCKET_NAME;
 const SNS_TOPIC_ARN = process.env.SNS_TOPIC_ARN;
 const STATE_KEY = 'state.json';
-const RANDOM_WINDOW_MINUTES = 10;
+const RANDOM_WINDOW_SECONDS = 30;
 
 // Helper to stream to string for S3 body
 const streamToString = (stream) =>
@@ -28,7 +28,7 @@ const streamToString = (stream) =>
 
 exports.handler = async (event) => {
     // 1. Random Sleep
-    const sleepTimeMs = Math.floor(Math.random() * RANDOM_WINDOW_MINUTES * 60 * 1000);
+    const sleepTimeMs = Math.floor(Math.random() * RANDOM_WINDOW_SECONDS * 1000);
     logger.info({ msg: 'Starting execution with random sleep', sleepTimeMs });
 
     if (sleepTimeMs > 0) {
