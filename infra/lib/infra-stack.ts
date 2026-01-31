@@ -47,10 +47,8 @@ export class PatagoniaScraperStack extends cdk.Stack {
         // 'HOME': '/tmp', // Sometimes needed for cache
       },
       bundling: {
-        externalModules: [
-          '@sparticuz/chromium', // Exclude if using layer, but here we bundle it since it's in node_modules
-          'puppeteer-core' // Same, usually safer to bundle if not using layer
-        ],
+        // Force bundling of all dependencies since we are not using layers
+        externalModules: [],
       },
     });
 
