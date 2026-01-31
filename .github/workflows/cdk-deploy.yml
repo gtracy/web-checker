@@ -70,34 +70,33 @@ jobs:
       - name: Direct Lambda Update
         if: env.stack_exists == 'true'
         run: |
-          echo "Stack exists. Performing fast update..."
+          echo "Stack exists. Performing fast update via S3..."
           
-          # 1. Build (creates dist/index.js)
+          # 1. Build
           npm run build
-
-          # 2. Optimized Package: Copy ONLY the chromium binary
-          # We do not need aws-sdk, pino, or puppeteer because they are bundled into index.js
-          echo "Copying Chromium binary..."
-          mkdir -p dist/node_modules/@sparticuz
-          cp -r node_modules/@sparticuz/chromium dist/node_modules/@sparticuz/
-          
-          # 3. Zip
           cd dist && zip -r ../function.zip . && cd ..
           
-          # 4. Get Function Name
+          # 2. Get Function Name
           FUNCTION_NAME=$(aws cloudformation describe-stacks \
             --stack-name PatagoniaScraperStack \
             --query "Stacks[0].Outputs[?OutputKey=='ScraperFunctionName'].OutputValue" \
             --output text)
             
           echo "FUNCTION_NAME=$FUNCTION_NAME" >> $GITHUB_ENV
+
+          # 3. Upload to S3 (User specified bucket)
+          # Bucket: lambda-func-deploys
+          # Key: web-checker/function.zip
+          echo "Uploading to S3..."
+          aws s3 cp function.zip s3://lambda-func-deploys/web-checker/function.zip
           
-          # 5. Update Code
+          # 4. Update Code from S3
           aws lambda update-function-code \
             --function-name $FUNCTION_NAME \
-            --zip-file fileb://function.zip
+            --s3-bucket lambda-func-deploys \
+            --s3-key web-checker/function.zip
             
-          # 6. Wait
+          # 5. Wait
           aws lambda wait function-updated --function-name $FUNCTION_NAME
 
       - name: Publish Version & Alias

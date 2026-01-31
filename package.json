@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Warning: no test specified\" && exit 0",
-    "build": "mkdir -p dist && esbuild src/index.js --bundle --platform=node --target=node20 --external:@sparticuz/chromium --outfile=dist/index.js"
+    "build": "mkdir -p dist && esbuild src/index.js --bundle --platform=node --target=node20 --external:@sparticuz/chromium --outfile=dist/index.js && cp -r node_modules dist/"
   },
   "keywords": [],
   "author": "",
