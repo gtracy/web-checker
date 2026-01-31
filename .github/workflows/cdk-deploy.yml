@@ -1,4 +1,4 @@
-name: Deploy Infrastructure
+name: Deploy Function Code
 
 on:
   push:
@@ -21,18 +21,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Project Dependencies
-        run: npm ci
-
-      - name: Install Infra Dependencies
-        working-directory: infra
+      - name: Install Dependencies
         run: |
           npm ci
-          npm install -g aws-cdk
+          # Install esbuild for the build script
+          npm install esbuild
 
-      - name: Run Tests
-        # Run tests from the project root (where the test script is)
-        run: npm test
+      - name: Build & Package
+        run: |
+          npm run build
+          cd dist
+          zip -r ../function.zip .
+          cd ..
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -41,23 +41,33 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: CDK Deploy
-        id: deploy
-        working-directory: infra
-        env:
-          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
-        # Deploy and output to file to parse CfnOutputs
+      - name: Get Function Name
+        id: get-name
         run: |
-          npx cdk deploy --require-approval never --outputs-file outputs.json
+          # Retrieve the function name from the CloudFormation stack outputs
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name PatagoniaScraperStack \
+            --query "Stacks[0].Outputs[?OutputKey=='ScraperFunctionName'].OutputValue" \
+            --output text)
+            
+          if [ -z "$FUNCTION_NAME" ] || [ "$FUNCTION_NAME" == "None" ]; then
+            echo "Error: Could not retrieve Function Name from stack outputs."
+            exit 1
+          fi
+          echo "FUNCTION_NAME=$FUNCTION_NAME" >> $GITHUB_ENV
+          echo "Found Function: $FUNCTION_NAME"
+
+      - name: Update Lambda Code
+        run: |
+          aws lambda update-function-code \
+            --function-name $FUNCTION_NAME \
+            --zip-file fileb://function.zip
+
+          # Wait for update to complete
+          aws lambda wait function-updated --function-name $FUNCTION_NAME
 
       - name: Publish Lambda Version
-        id: publish
-        working-directory: infra
         run: |
-          # Parse the function name from CDK outputs
-          FUNCTION_NAME=$(jq -r '.PatagoniaScraperStack.ScraperFunctionName' outputs.json)
-          echo "Function Name: $FUNCTION_NAME"
-          
           # Publish new version
           echo "Publishing new version..."
           VERSION=$(aws lambda publish-version --function-name "$FUNCTION_NAME" --query 'Version' --output text)
