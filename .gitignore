@@ -1,0 +1,14 @@
+# Defaults
+node_modules
+.DS_Store
+.env
+npm-debug.log
+yarn-error.log
+
+# CDK
+infra/cdk.out
+infra/node_modules
+
+# Editor
+.vscode
+.idea

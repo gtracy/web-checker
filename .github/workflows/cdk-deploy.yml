@@ -1,0 +1,35 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        working-directory: infra
+        run: |
+          npm ci
+          npm install -g aws-cdk
+          # Ensure esbuild is installed (it's in devDeps)
+          npm install
+
+      - name: CDK Deploy
+        working-directory: infra
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+        # --require-approval never is crucial for CI
+        run: npx cdk deploy --require-approval never
