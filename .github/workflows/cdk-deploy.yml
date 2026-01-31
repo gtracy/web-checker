@@ -5,6 +5,10 @@ on:
     tags:
       - '*'
 
+permissions:
+  id-token: write # Required for requesting the JWT
+  contents: read  # Required for actions/checkout
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -22,15 +26,44 @@ jobs:
         run: |
           npm ci
           npm install -g aws-cdk
-          # Ensure esbuild is installed (it's in devDeps)
           npm install
 
+      - name: Run Tests
+        # Run tests from the project root (where the test script is)
+        run: npm test
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
       - name: CDK Deploy
+        id: deploy
         working-directory: infra
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
-        # --require-approval never is crucial for CI
-        run: npx cdk deploy --require-approval never
+        # Deploy and output to file to parse CfnOutputs
+        run: |
+          npx cdk deploy --require-approval never --outputs-file outputs.json
+
+      - name: Publish Lambda Version
+        id: publish
+        working-directory: infra
+        run: |
+          # Parse the function name from CDK outputs
+          FUNCTION_NAME=$(jq -r '.PatagoniaScraperStack.ScraperFunctionName' outputs.json)
+          echo "Function Name: $FUNCTION_NAME"
+          
+          # Publish new version
+          echo "Publishing new version..."
+          VERSION=$(aws lambda publish-version --function-name "$FUNCTION_NAME" --query 'Version' --output text)
+          echo "Published Version: $VERSION"
+          
+          # Update/Create 'prod' alias
+          echo "Updating 'prod' alias to version $VERSION..."
+          aws lambda update-alias --function-name "$FUNCTION_NAME" --name prod --function-version "$VERSION" || \
+          aws lambda create-alias --function-name "$FUNCTION_NAME" --name prod --function-version "$VERSION"
+
+          echo "Successfully updated alias 'prod' to version $VERSION"

@@ -66,5 +66,11 @@ export class PatagoniaScraperStack extends cdk.Stack {
     });
 
     rule.addTarget(new targets.LambdaFunction(scraperLambda));
+
+    // 6. Outputs
+    new cdk.CfnOutput(this, 'ScraperFunctionName', {
+      value: scraperLambda.functionName,
+      description: 'The name of the scraper Lambda function',
+    });
   }
 }
