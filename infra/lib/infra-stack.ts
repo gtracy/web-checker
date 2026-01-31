@@ -26,8 +26,11 @@ export class PatagoniaScraperStack extends cdk.Stack {
     });
 
     // 5. Email Subscription
-    // Replace 'example@test.com' with your actual email in the future or via context/env
-    topic.addSubscription(new subs.EmailSubscription('example@test.com'));
+    const emailAddress = process.env.ALERT_EMAIL;
+    if (!emailAddress) {
+      throw new Error('ALERT_EMAIL environment variable is required');
+    }
+    topic.addSubscription(new subs.EmailSubscription(emailAddress));
 
     // 2. Lambda Function
     const scraperLambda = new nodejs.NodejsFunction(this, 'ScraperFunction', {
