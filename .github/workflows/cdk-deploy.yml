@@ -41,20 +41,34 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-2' }}
 
-      - name: Check Stack Existence
+      - name: Check Stack & Output
         id: check-stack
         run: |
-          if aws cloudformation describe-stacks --stack-name PatagoniaScraperStack > /dev/null 2>&1; then
-            echo "Stack exists."
-            echo "stack_exists=true" >> $GITHUB_ENV
-          else
+          # 1. Check if stack exists
+          if ! aws cloudformation describe-stacks --stack-name PatagoniaScraperStack > /dev/null 2>&1; then
             echo "Stack does not exist."
-            echo "stack_exists=false" >> $GITHUB_ENV
+            echo "perform_full_deploy=true" >> $GITHUB_ENV
+            exit 0
+          fi
+          
+          # 2. Check if Output exists
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name PatagoniaScraperStack \
+            --query "Stacks[0].Outputs[?OutputKey=='ScraperFunctionName'].OutputValue" \
+            --output text)
+            
+          if [ -z "$FUNCTION_NAME" ] || [ "$FUNCTION_NAME" == "None" ]; then
+            echo "Stack exists but Output is missing."
+            echo "perform_full_deploy=true" >> $GITHUB_ENV
+          else
+            echo "Stack and Output found: $FUNCTION_NAME"
+            echo "perform_full_deploy=false" >> $GITHUB_ENV
+            echo "FUNCTION_NAME=$FUNCTION_NAME" >> $GITHUB_ENV
           fi
 
-      # PATH A: Full Deploy (If stack missing)
-      - name: CDK Deploy (Bootstrap)
-        if: env.stack_exists == 'false'
+      # PATH A: Full Deploy (If stack missing OR output missing)
+      - name: CDK Deploy (Bootstrap/Update)
+        if: env.perform_full_deploy == 'true'
         working-directory: infra
         env:
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
@@ -66,9 +80,9 @@ jobs:
           FUNCTION_NAME=$(jq -r '.PatagoniaScraperStack.ScraperFunctionName' outputs.json)
           echo "FUNCTION_NAME=$FUNCTION_NAME" >> $GITHUB_ENV
 
-      # PATH B: Direct Update (If stack exists)
+      # PATH B: Direct Update (If stack & output exist)
       - name: Direct Lambda Update
-        if: env.stack_exists == 'true'
+        if: env.perform_full_deploy == 'false'
         run: |
           echo "Stack exists. Performing fast update via S3..."
           
@@ -76,21 +90,13 @@ jobs:
           npm run build
           cd dist && zip -r ../function.zip . && cd ..
           
-          # 2. Get Function Name
-          FUNCTION_NAME=$(aws cloudformation describe-stacks \
-            --stack-name PatagoniaScraperStack \
-            --query "Stacks[0].Outputs[?OutputKey=='ScraperFunctionName'].OutputValue" \
-            --output text)
-            
-          echo "FUNCTION_NAME=$FUNCTION_NAME" >> $GITHUB_ENV
-
-          # 3. Upload to S3 (User specified bucket)
+          # 2. Upload to S3 (User specified bucket)
           # Bucket: lambda-func-deploys
           # Key: web-checker/function.zip
           echo "Uploading to S3..."
           aws s3 cp function.zip s3://lambda-func-deploys/web-checker/function.zip
           
-          # 4. Update Code from S3
+          # 3. Update Code from S3
           aws lambda update-function-code \
             --function-name $FUNCTION_NAME \
             --s3-bucket lambda-func-deploys \
