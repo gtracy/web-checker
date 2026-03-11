@@ -57,9 +57,9 @@ export class PatagoniaScraperStack extends cdk.Stack {
     // Grant Lambda permissions to SNS
     topic.grantPublish(scraperLambda);
 
-    // 3. EventBridge Rule (Hourly)
+    // 3. EventBridge Rule 
     const rule = new events.Rule(this, 'ScraperSchedule', {
-      schedule: events.Schedule.rate(cdk.Duration.hours(1)),
+      schedule: events.Schedule.rate(cdk.Duration.hours(6)),
     });
 
     rule.addTarget(new targets.LambdaFunction(scraperLambda));
